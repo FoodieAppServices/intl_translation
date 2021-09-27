@@ -24,6 +24,7 @@ import 'dart:io';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/standard_ast_factory.dart';
+import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/src/dart/ast/constant_evaluator.dart';
 import 'package:intl_translation/src/intl_message.dart';
@@ -166,8 +167,8 @@ class MessageFindingVisitor extends GeneralizingAstVisitor {
   FormalParameterList? parameters;
   String? name;
 
-  final FormalParameterList _emptyParameterList =
-      astFactory.formalParameterList(null, [], null, null, null);
+  // final FormalParameterList _emptyParameterList =
+  //     astFactory.formalParameterList(Token(type, offset), [], null, null, null);
 
   /// Return true if [node] matches the pattern we expect for Intl.message()
   bool looksLikeIntlMessage(MethodInvocation node) {
@@ -219,7 +220,7 @@ class MessageFindingVisitor extends GeneralizingAstVisitor {
   /// encountered before seeing the Intl.message call.
   void visitMethodDeclaration(MethodDeclaration node) {
     name = node.name.name;
-    parameters = node.parameters ?? _emptyParameterList;
+    parameters = node.parameters;
     super.visitMethodDeclaration(node);
     name = null;
     parameters = null;
@@ -229,7 +230,7 @@ class MessageFindingVisitor extends GeneralizingAstVisitor {
   /// encountered before seeing the Intl.message call.
   void visitFunctionDeclaration(FunctionDeclaration node) {
     name = node.name.name;
-    parameters = node.functionExpression.parameters ?? _emptyParameterList;
+    parameters = node.functionExpression.parameters;
     super.visitFunctionDeclaration(node);
     name = null;
     parameters = null;
@@ -245,7 +246,6 @@ class MessageFindingVisitor extends GeneralizingAstVisitor {
     } else {
       name = null;
     }
-    parameters = _emptyParameterList;
     super.visitFieldDeclaration(node);
     name = null;
     parameters = null;
@@ -261,7 +261,7 @@ class MessageFindingVisitor extends GeneralizingAstVisitor {
     } else {
       name = null;
     }
-    parameters = _emptyParameterList;
+
     super.visitTopLevelVariableDeclaration(node);
     name = null;
     parameters = null;
@@ -303,7 +303,7 @@ class MessageFindingVisitor extends GeneralizingAstVisitor {
 
   /// Try to extract a message. On failure, return a String error message.
   String? _extractMessage(MethodInvocation node) {
-    MainMessage message;
+    MainMessage? message;
     try {
       if (node.methodName.name == "message") {
         message = messageFromIntlMessageCall(node);
@@ -356,9 +356,9 @@ class MessageFindingVisitor extends GeneralizingAstVisitor {
   /// and the values we get by calling [extract]. We set those values
   /// by calling [setAttribute]. This is the common parts between
   /// [messageFromIntlMessageCall] and [messageFromDirectPluralOrGenderCall].
-  MainMessage _messageFromNode(
+  MainMessage? _messageFromNode(
       MethodInvocation node,
-      MainMessage extract(MainMessage message, List<AstNode> arguments),
+      MainMessage? extract(MainMessage message, List<AstNode> arguments),
       void setAttribute(
           MainMessage message, String fieldName, Object? fieldValue)) {
     var message = new MainMessage();
@@ -418,8 +418,8 @@ class MessageFindingVisitor extends GeneralizingAstVisitor {
   /// Create a MainMessage from [node] using the name and
   /// parameters of the last function/method declaration we encountered
   /// and the parameters to the Intl.message call.
-  MainMessage messageFromIntlMessageCall(MethodInvocation node) {
-    MainMessage extractFromIntlCall(
+  MainMessage? messageFromIntlMessageCall(MethodInvocation node) {
+    MainMessage? extractFromIntlCall(
         MainMessage message, List<AstNode> arguments) {
       try {
         // The pieces of the message, either literal strings, or integers
@@ -428,7 +428,6 @@ class MessageFindingVisitor extends GeneralizingAstVisitor {
         extracted = _extractFromIntlCallWithInterpolation(message, arguments);
         message.addPieces(extracted as List<Object>);
       } on IntlMessageExtractionException catch (e) {
-        message = null;
         var err = new StringBuffer()
           ..writeAll(["Error ", e, "\nProcessing <", node, ">\n"])
           ..write(extraction._reportErrorLocation(node));
@@ -449,7 +448,7 @@ class MessageFindingVisitor extends GeneralizingAstVisitor {
   /// Create a MainMessage from [node] using the name and
   /// parameters of the last function/method declaration we encountered
   /// and the parameters to the Intl.plural or Intl.gender call.
-  MainMessage messageFromDirectPluralOrGenderCall(MethodInvocation node) {
+  MainMessage? messageFromDirectPluralOrGenderCall(MethodInvocation node) {
     MainMessage extractFromPluralOrGender(MainMessage message, _) {
       var visitor = new PluralAndGenderVisitor(
           message.messagePieces, message, extraction);
@@ -516,7 +515,8 @@ class InterpolationVisitor extends SimpleAstVisitor {
   }
 
   void lookForPluralOrGender(InterpolationExpression node) {
-    var visitor = new PluralAndGenderVisitor(pieces, message as ComplexMessage?, extraction);
+    var visitor = new PluralAndGenderVisitor(
+        pieces, message as ComplexMessage?, extraction);
     node.accept(visitor);
     if (!visitor.foundPluralOrGender) {
       throw new IntlMessageExtractionException(
@@ -563,7 +563,8 @@ class PluralAndGenderVisitor extends SimpleAstVisitor {
     if (!looksLikePluralOrGender(node.expression)) return;
     var reason = checkValidity(node.expression as MethodInvocation);
     if (reason != null) throw reason;
-    var message = messageFromMethodInvocation(node.expression as MethodInvocation);
+    var message =
+        messageFromMethodInvocation(node.expression as MethodInvocation);
     foundPluralOrGender = true;
     pieces.add(message);
     super.visitInterpolationExpression(node);
